@@ -14,6 +14,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import select
+from sqlalchemy import update
+from sqlalchemy import delete
 from datetime import datetime
 from pydantic import BaseModel, field_validator
 from config import (
@@ -126,9 +128,33 @@ async def send_data_to_subscribers(user_id: int, data):
 
 @app.post("/processed_agent_data/")
 async def create_processed_agent_data(data: List[ProcessedAgentData]):
-    # Insert data to database
-    # Send data to subscribers
-    pass
+    new_ids = []
+    db = SessionLocal()
+
+    for datum in data:
+        db_data = processed_agent_data.insert().values(
+            road_state=datum.road_state,
+            user_id=datum.agent_data.user_id,
+            x=datum.agent_data.accelerometer.x,
+            y=datum.agent_data.accelerometer.y,
+            z=datum.agent_data.accelerometer.z,
+            latitude=datum.agent_data.gps.latitude,
+            longitude=datum.agent_data.gps.longitude,
+            timestamp=datum.agent_data.timestamp
+        )
+        result = db.execute(db_data)
+        db.flush()
+        new_ids.append(result.inserted_primary_key[0])
+
+    db.commit()
+
+    db.close()
+
+    for datum in data:
+        await send_data_to_subscribers(datum.agent_data.user_id, datum.dict())
+
+    return {"created_ids": new_ids}
+
 
 
 @app.get(
@@ -136,32 +162,67 @@ async def create_processed_agent_data(data: List[ProcessedAgentData]):
     response_model=ProcessedAgentDataInDB,
 )
 def read_processed_agent_data(processed_agent_data_id: int):
-    # Get data by id
-    pass
+    session = SessionLocal()
+
+    result = session.query(processed_agent_data).filter(processed_agent_data.c.id == processed_agent_data_id).first()
+    if result is None:
+        raise HTTPException(status_code=404, detail="Data not found")
+    return result
 
 
 @app.get("/processed_agent_data/", response_model=list[ProcessedAgentDataInDB])
 def list_processed_agent_data():
-    # Get list of data
-    pass
+    session = SessionLocal()
+
+    result = session.query(processed_agent_data).all()
+    return result
 
 
-@app.put(
-    "/processed_agent_data/{processed_agent_data_id}",
-    response_model=ProcessedAgentDataInDB,
-)
-def update_processed_agent_data(processed_agent_data_id: int, data: ProcessedAgentData):
-    # Update data
-    pass
+@app.put("/processed_agent_data/{processed_agent_data_id}", response_model=ProcessedAgentDataInDB)
+async def update_processed_agent_data(processed_agent_data_id: int, data: ProcessedAgentData):
+    db = SessionLocal()
+
+    stmt = (
+        update(processed_agent_data).
+        where(processed_agent_data.c.id == processed_agent_data_id).
+        values(
+            road_state=data.road_state,
+            user_id=data.agent_data.user_id,
+            x=data.agent_data.accelerometer.x,
+            y=data.agent_data.accelerometer.y,
+            z=data.agent_data.accelerometer.z,
+            latitude=data.agent_data.gps.latitude,
+            longitude=data.agent_data.gps.longitude,
+            timestamp=data.agent_data.timestamp
+        ).
+        returning(*processed_agent_data.c)
+    )
+
+    result = db.execute(stmt)
+    db.commit()
+    
+    updated_row = result.fetchone()
+    
+    db.close()
+
+    if updated_row is None:
+        raise HTTPException(status_code=404, detail="Data not found")
+
+    return updated_row._mapping
 
 
-@app.delete(
-    "/processed_agent_data/{processed_agent_data_id}",
-    response_model=ProcessedAgentDataInDB,
-)
+@app.delete("/processed_agent_data/{processed_agent_data_id}")
 def delete_processed_agent_data(processed_agent_data_id: int):
-    # Delete by id
-    pass
+    db = SessionLocal()
+    stmt = delete(processed_agent_data).where(processed_agent_data.c.id == processed_agent_data_id)
+    result = db.execute(stmt)
+    db.commit()
+    db.close()
+    
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Data not found")
+    
+    return {"message": "Data deleted successfully"}
 
 
 if __name__ == "__main__":

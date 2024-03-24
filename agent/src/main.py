@@ -1,12 +1,11 @@
 from paho.mqtt import client as mqtt_client
-import json
 import time
 from schema.aggregated_data_schema import AggregatedDataSchema
-from schema.accelerometer_schema import AccelerometerSchema
-from schema.gps_schema import GpsSchema
-from schema.parking_schema import ParkingSchema
 from file_datasource import FileDatasource
 import config
+from datetime import datetime
+from domain.aggregated_data import AggregatedData
+import logging
 
 
 def connect_mqtt(broker, port):
@@ -27,7 +26,7 @@ def connect_mqtt(broker, port):
     return client
 
 
-def publish(client, topics, datasource, delay):
+def publish(client, topic, datasource, delay):
     datasource.startReading()
     while True:
         time.sleep(delay)
@@ -38,39 +37,26 @@ def publish(client, topics, datasource, delay):
 
         accelerometer_data, gps_data, parking_data = data_list
 
-        # Accelerometer
-        if accelerometer_data is not None:
-            msg = AccelerometerSchema().dumps(accelerometer_data)
-            client.publish(topics['accelerometer'], msg)
-            print(f"Sent accelerometer data to topic `{topics['accelerometer']}`")
-        
-        # GPS
-        if gps_data is not None:
-            msg = GpsSchema().dumps(gps_data)
-            client.publish(topics['gps'], msg)
-            print(f"Sent GPS data to topic `{topics['gps']}`")
+        msg = AggregatedDataSchema().dumps(AggregatedData(
+            accelerometer_data,
+            gps_data,
+            parking_data,
+            datetime.now(),
+            1
+        ))
 
-        # Parking
-        if parking_data is not None:
-            msg = ParkingSchema().dumps(parking_data)
-            client.publish(topics['parking'], msg)
-            print(f"Sent parking data to topic `{topics['parking']}`")
+        logging.info(f"Sent data to topic `{topic}`")
 
+        client.publish(topic, msg)
 
 
 def run():
     # Prepare mqtt client
     client = connect_mqtt(config.MQTT_BROKER_HOST, config.MQTT_BROKER_PORT)
-    # Topics
-    topics = {
-        'accelerometer': 'measurement/accelerometer',
-        'gps': 'measurement/gps',
-        'parking': 'measurement/parking'
-    }
     # Prepare datasource
     datasource = FileDatasource("data/accelerometer.csv", "data/gps.csv", "data/parking.csv")
     # Infinity publish data
-    publish(client, topics, datasource, config.DELAY)
+    publish(client, config.MQTT_TOPIC, datasource, config.DELAY)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ class HubMqttAdapter(HubGateway):
         result = self.mqtt_client.publish(self.topic, msg)
         status = result[0]
         if status == 0:
+            logging.info('Sent data from edge to hub')
             return True
         else:
             print(f"Failed to send message to topic {self.topic}")

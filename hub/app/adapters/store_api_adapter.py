@@ -1,4 +1,4 @@
-import json
+import logging
 from typing import List
 
 import requests
@@ -14,4 +14,7 @@ class StoreApiAdapter(StoreGateway):
     def save_data(self, processed_agent_data_batch: List[ProcessedAgentData]):
         data = [processed_agent_data.model_dump_json() for processed_agent_data in processed_agent_data_batch]
         response = requests.post(f"{self.api_base_url}/processed_agent_data/", data='[' + ','.join(data) + ']', headers={'Content-Type': 'application/json'})
+
+        logging.info("Sent data from hub to store")
+
         return response.status_code == 200

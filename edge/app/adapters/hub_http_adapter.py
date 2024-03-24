@@ -26,4 +26,7 @@ class HubHttpAdapter(HubGateway):
                 f"Invalid Hub response\nData: {processed_data.model_dump_json()}\nResponse: {response}"
             )
             return False
+        
+        logging.info('Sent data from edge to hub')
+
         return True
